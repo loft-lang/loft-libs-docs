@@ -1,0 +1,8 @@
+[package]
+name    = "html"
+version = "0.1.0"
+loft    = ">=0.8"
+repository = "loft-libs-docs"
+
+[library]
+entry = "src/html.loft"

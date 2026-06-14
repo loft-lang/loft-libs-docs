@@ -1,0 +1,5 @@
+native-auto/
+dist/
+*.tar.gz
+loft.lock
+target/
