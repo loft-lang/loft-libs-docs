@@ -200,6 +200,18 @@ fn main() {
     must_not_contain(utf, "———", "no em-dash widening");
     must_not_contain(utf, "→→", "no arrow widening");
 
+    // ── UTF-8 across slice-bearing constructs (@PLN110 len→size regression) ──
+    // Byte-slice / byte-index bounds (links, fenced code, list items, heading text
+    // past the marker) must be sized in BYTES, not the character count `len` now
+    // returns — otherwise multi-byte content truncates or the inline cursor re-emits
+    // characters (`café` → `caféé`).
+    u2 = markdown::render("## Héllo wörld\n\n[café](/naïve)\n\n```txt\n— ok\n```\n\n- café item\n", "", "", "");
+    must_contain(u2, "Héllo wörld", "UTF-8 heading text past the ## marker");
+    must_contain(u2, "<a href=\"/naïve\">café</a>", "UTF-8 in link text and href");
+    must_contain(u2, "— ok", "UTF-8 in fenced code");
+    must_contain(u2, "café item", "UTF-8 in list item");
+    must_not_contain(u2, "caféé", "no multi-byte character duplication");
+
     // ── HTML in source escaped (no raw HTML passthrough) ──
     htm = markdown::render("a <script>x</script> b\n", "", "", "");
     must_contain(htm, "&lt;script&gt;", "raw HTML escaped");
