@@ -1,0 +1,102 @@
+// Copyright (c) 2026 Jurjen Stellingwerff
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// @NAME: Getting Started
+// @TITLE: Escaping text so it is safe to put inside HTML.
+//
+// `html` is one function. It escapes the five characters that can break out of
+// an HTML element body or an attribute value, so text you did not write can be
+// interpolated into markup without becoming markup.
+//
+// It is not a markdown renderer — that is `markdown`, which turns a document
+// into HTML. It is not a sanitiser either: it does not filter markup or strip
+// scripts. It makes attacker-supplied TEXT safe to place in markup, which is a
+// different and much stronger guarantee than making attacker-supplied MARKUP
+// safe. If you need to accept a subset of HTML from a user, this is not it.
+//
+// ## The whole library
+//
+// `escape_html` is a method on `text`, so it reads in the direction the data
+// flows:
+use html;
+
+fn main() {
+  raw = "Tom & Jerry's <b>\"show\"</b>";
+  println("<p>{raw.escape_html()}</p>");
+
+  // Each section below is a function and `main` calls it — a section `main`
+  // does not call still compiles, and silently never runs its assertions.
+  the_five();
+  where_to_use_it();
+  the_apostrophe();
+}
+
+// That prints:
+//
+//     <p>Tom &amp; Jerry&#x27;s &lt;b&gt;&quot;show&quot;&lt;/b&gt;</p>
+//
+// ## The five characters
+//
+// `&` becomes `&amp;`, `<` becomes `&lt;`, `>` becomes `&gt;`, `"` becomes
+// `&quot;` and `'` becomes `&#x27;`.
+//
+// `&` is escaped first, so the entities the others produce are never escaped a
+// second time — an ampersand-last implementation turns `<` into `&amp;lt;` and
+// the reader sees the entity rather than the character.
+
+fn the_five() {
+  assert("&".escape_html() == "&amp;", "ampersand");
+  assert("<".escape_html() == "&lt;", "less-than");
+  assert(">".escape_html() == "&gt;", "greater-than");
+  assert("\"".escape_html() == "&quot;", "double quote");
+  assert("'".escape_html() == "&#x27;", "apostrophe");
+
+  // The ordering property, stated as a test: one pass, no double-escaping.
+  assert("<a>".escape_html() == "&lt;a&gt;", "no entity is escaped twice");
+
+  // Text that needs nothing comes back unchanged.
+  assert("plain text".escape_html() == "plain text", "untouched when it can be");
+}
+
+// ## Where it belongs
+//
+// Every place text you did not write reaches HTML output. That is the element
+// body AND the attribute value, in either quoting style — a `<p>` needs it as
+// much as an `<a title='...'>` does, which is what the apostrophe is for.
+
+fn where_to_use_it() {
+  wu_name = "O'Brien & Sons";
+  wu_safe = wu_name.escape_html();
+  wu_body = "<p>{wu_safe}</p>";
+  wu_attr = "<a title='{wu_safe}'>x</a>";
+
+  assert(!wu_body.contains("&amp;amp;"), "the body is escaped once, not twice");
+  // The property that matters for the attribute: no raw apostrophe survives, so
+  // nothing in the value can close the quote the markup opened.
+  assert(!wu_safe.contains("'"), "no raw apostrophe reaches the attribute value");
+  assert(wu_attr.contains("&#x27;"), "it is an entity instead");
+}
+
+// It does not escape for other contexts. Text going into a URL, a JavaScript
+// string or a CSS value needs that context's own escaping; HTML entities
+// protect none of them.
+//
+// ## The one that surprises people
+//
+// The `markdown` package exports `html_escape`, which looks like this function
+// with its words swapped. It is not quite: `markdown::html_escape` escapes four
+// characters and leaves the apostrophe alone.
+//
+// That is fine for the element bodies the renderer puts text into, and unsafe
+// in a single-quoted attribute value. When you are writing markup yourself,
+// reach for this package.
+
+fn the_apostrophe() {
+  ap_raw = "Jerry's";
+  assert(ap_raw.escape_html() == "Jerry&#x27;s", "html escapes it");
+}
+
+// ## Where to go next
+//
+// There is nothing else here — one function, `#pure`, no dependencies and no
+// state, so it behaves identically on the interpreter, `--native`, wasm and in
+// the browser. `tests/01-escape.loft` in the package is the fuller set of cases.
