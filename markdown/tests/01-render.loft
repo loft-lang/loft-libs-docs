@@ -49,6 +49,8 @@ fn main() {
     must_eq(markdown::rewrite_link("https://example.com", "doc"), "https://example.com",
             "absolute https passthrough");
     must_eq(markdown::rewrite_link("#anchor", "doc"), "#anchor", "anchor passthrough");
+    must_eq(markdown::rewrite_link("/abs/p.md", "doc/claude"), "/abs/p.md",
+            "root-relative is not joined onto base_dir");
     must_eq(markdown::rewrite_link("other.md", "doc/claude"), "/file/doc/claude/other.md",
             "relative path resolution");
     must_eq(markdown::rewrite_link("../sibling.md", "doc/claude/plans"),

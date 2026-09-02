@@ -49,9 +49,34 @@
 //   - Multi-line / multi-paragraph table cells
 //   - Loose lists (paragraph-per-item)
 //   - Raw HTML passthrough (HTML in markdown is escaped)
+//
+// ── Using it ─────────────────────────────────────────────────
+//
+//     src = "## Getting Started\n\nSee [the guide](guide.md) and @P259.\n";
+//     markdown::render(src, "doc/claude", "/tag/", "")
+//
+//     <h2 id="getting-started">Getting Started</h2><p>See
+//     <a href="/file/doc/claude/guide.md">the guide</a> and
+//     <a class="tag-ref" href="/tag/P259">@P259</a>.</p>
+//
+// Three things happened there that a plain renderer does not do, and each is one
+// of the arguments: the heading grew a GitHub-compatible slug id, the relative
+// link was resolved against `base_dir` and routed through `/file/`, and `@P259`
+// became a tag link because `tag_url_prefix` was non-empty.  Pass `""` for any of
+// them to switch that rewriting off.
+//
+// The other four functions are the pieces `render` is built from, exposed because
+// a caller rendering its own chrome needs the same answers: `slugify` for an
+// anchor that matches the heading, `render_inline` for a title or a table cell,
+// `html_escape` for text going into markup, `rewrite_link` for a URL resolved the
+// way the body's links are.
 
 // ── HTML escape ──────────────────────────────────────────────
 
+// Make text safe to put inside markup: `&`, `<`, `>` and `"` become entities.
+//
+// ⚠ `'` IS NOT ESCAPED, so the result is safe in a double-quoted attribute and
+// in element text, but not in a single-quoted one.  Quote attributes with `"`.
 pub fn html_escape(s: text) -> text {
     out = "";
     for c in s {
@@ -80,6 +105,9 @@ fn strip_cr(s: text) -> text {
 
 // ── Public entry point ───────────────────────────────────────
 
+// Render markdown to HTML — the entry point, and the only one most callers need.
+// The three prefixes each switch off with `""`, so the plainest possible call is
+// `render(src, "", "", "")`; see the header for what each one turns on.
 pub fn render(source: text, base_dir: text, tag_url_prefix: text, image_url_prefix: text) -> text {
     // Pre-process: strip CR (handle CRLF input cleanly).
     src = strip_cr(source);
@@ -414,6 +442,9 @@ fn is_setext_underline(line: text, ch: character) -> boolean {
     true
 }
 
+// A heading's anchor id, by GitHub's rules — lower-cased, spaces to hyphens,
+// punctuation dropped.  `render` puts this on every heading, so a caller
+// building its own table of contents uses this to get links that match.
 pub fn slugify(heading: text) -> text {
     out = "";
     for c in heading {
@@ -562,6 +593,9 @@ fn rewrite_image(url: text, base_dir: text, image_url_prefix: text) -> text {
     "{image_url_prefix}{cur_base}/{cleaned}"
 }
 
+// Render only the INLINE constructs — bold, code, links, images — with no
+// paragraph or block wrapper.  What a title, a table cell or a tooltip wants,
+// where `render` would wrap the result in `<p>`.
 pub fn render_inline(src: text, base_dir: text, tag_url_prefix: text, image_url_prefix: text) -> text {
     out = "";
     n = src.size();
@@ -818,11 +852,22 @@ fn title_part_of(raw: text) -> text {
     raw[quote_at + 1..end]
 }
 
+// Resolve one relative URL the way a link in the body would be: joined onto
+// `base_dir` and routed through `/file/`.  Absolute URLs and anchors are left
+// alone — a scheme, an anchor, and a root-relative `/...` are all already
+// absolute.  For a caller that builds its own navigation and needs it to agree
+// with the links inside the rendered page.
 pub fn rewrite_link(url: text, base_dir: text) -> text {
     if url.starts_with("http://") || url.starts_with("https://") || url.starts_with("mailto:") {
         return url;
     }
     if url.starts_with("#") {
+        return url;
+    }
+    // Root-relative already: resolving it against `base_dir` treated it as a
+    // relative path and produced `/file/<base>//abs/p.md` — a doubled separator on
+    // a URL that was never relative.  Left alone, like every other absolute form.
+    if url.starts_with("/") {
         return url;
     }
     if base_dir == "" {
