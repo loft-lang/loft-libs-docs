@@ -49,6 +49,8 @@ fn main() {
     must_eq(markdown::rewrite_link("https://example.com", "doc"), "https://example.com",
             "absolute https passthrough");
     must_eq(markdown::rewrite_link("#anchor", "doc"), "#anchor", "anchor passthrough");
+    must_eq(markdown::rewrite_link("/abs/p.md", "doc/claude"), "/abs/p.md",
+            "root-relative is not joined onto base_dir");
     must_eq(markdown::rewrite_link("other.md", "doc/claude"), "/file/doc/claude/other.md",
             "relative path resolution");
     must_eq(markdown::rewrite_link("../sibling.md", "doc/claude/plans"),
@@ -139,7 +141,7 @@ fn main() {
     bi = bq2.find("<blockquote>");
     while bi >= 0 {
         bq2_count = bq2_count + 1;
-        rest = bq2[bi + 12..bq2.len()];
+        rest = bq2[bi + 12..];
         next = rest.find("<blockquote>");
         if next < 0 { bi = -1; }
         else { bi = bi + 12 + next; }

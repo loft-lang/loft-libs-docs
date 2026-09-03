@@ -1,0 +1,103 @@
+// Copyright (c) 2026 Jurjen Stellingwerff
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// @NAME: Getting Started
+// @TITLE: Turning markdown into HTML, and pulling a table of contents out of it.
+//
+// `markdown` renders CommonMark with a GFM subset to HTML, and extracts a
+// document's headings so a page can build its own table of contents from the
+// same source it renders. It is pure loft: one pass over the text, no C and no
+// parser generator.
+//
+// It is not an HTML escaper for general use — that is `html`, and the two
+// differ in a way worth knowing (see the last section). It is not a sanitiser
+// for HTML you accept from users either: raw HTML in the source is escaped
+// rather than passed through.
+//
+// ## The smallest thing that does something
+//
+// `render` takes a document and answers HTML:
+use markdown;
+
+fn main() {
+  md = "# Title\n\nSome *emphasis* and a [link](other.md).\n";
+  out = markdown::render(md, "", "", "");
+  println(out);
+  assert(out.contains("<h1 id=\"title\">Title</h1>"), "heading with a slug id");
+  assert(out.contains("<em>emphasis</em>"), "inline emphasis");
+
+  // Every section below is a function, and `main` calls each one — a section
+  // `main` does not call still COMPILES, so it would catch a renamed API and
+  // silently never run its assertions.
+  rewriting();
+  contents();
+  escaping();
+}
+
+// That prints:
+//
+//     <h1 id="title">Title</h1><p>Some <em>emphasis</em> and a <a href="other.md">link</a>.</p>
+//
+// ## The four arguments, and why three of them are usually ""
+//
+// `render(source, base_dir, tag_url_prefix, image_url_prefix)`. Only the first
+// is the document. The other three are URL rewriting, and passing `""` turns
+// each one off — which is what you want for a document that stands alone:
+//
+//   - `base_dir` resolves relative `[text](other.md)` links against a directory
+//   - `tag_url_prefix` turns body-text `@P123` mentions into links
+//   - `image_url_prefix` routes relative image URLs through a prefix
+//
+// They exist because this renderer's first consumer serves a repository's own
+// Markdown, where a relative link between two files has to become a URL.
+
+fn rewriting() {
+  rw_src = "See [the design](DESIGN.md).\n";
+  rw_plain = markdown::render(rw_src, "", "", "");
+  assert(rw_plain.contains("href=\"DESIGN.md\""), "left alone when base_dir is empty");
+
+  rw_based = markdown::render(rw_src, "doc/claude", "", "");
+  assert(rw_based.contains("doc/claude/DESIGN.md"), "resolved against base_dir");
+}
+
+// ## A table of contents from the same source
+//
+// `extract_headings` walks the document in source order and answers the level,
+// the text and the slug of every heading. The slug is the one `render` puts on
+// the heading as its `id`, so a generated `#anchor` always lands.
+
+fn contents() {
+  toc_src = "# Top\n\n## The *hard* way\n\ntext\n";
+  toc = markdown::extract_headings(toc_src);
+  assert(len(toc) == 2, "two headings");
+  assert(toc[0].level == 1, "first is an h1");
+  assert(toc[1].text == "The *hard* way", "text is the RAW heading");
+  assert(toc[1].slug == "the-hard-way", "slug is the anchor render emits");
+
+  // The text is what the author wrote, BEFORE inline rendering — so a heading
+  // with emphasis in it comes back with the asterisks. Pass it through
+  // `render_inline` if the table of contents should carry the emphasis too.
+  assert(markdown::render_inline(toc[1].text, "", "", "").contains("<em>hard</em>"),
+         "render_inline turns the raw heading into markup");
+}
+
+// ## The one that surprises people — the apostrophe
+//
+// `markdown::html_escape` escapes four characters: `&`, `<`, `>` and `"`. It
+// does NOT escape the apostrophe. That is safe for the element bodies the
+// renderer puts text into, and unsafe in a single-quoted attribute value.
+//
+// The `html` package's `escape_html` escapes all five. If you are writing your
+// own markup rather than rendering a document, reach for that one.
+
+fn escaping() {
+  esc_raw = "Jerry's";
+  assert(markdown::html_escape(esc_raw) == "Jerry's", "the apostrophe survives here");
+}
+
+// ## Where to go next
+//
+// The API reference lists the whole surface — `render_inline` for one line of
+// inline markup, `rewrite_link` for the link rewriting on its own, `slugify`
+// for the anchor a heading gets. The package's own `tests/01-render.loft` walks
+// every supported construct and pins its HTML, which makes it the most complete
+// worked example of what this renderer does.
