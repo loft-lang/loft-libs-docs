@@ -960,6 +960,8 @@ fn match_tracker_tag(src: text, start: integer, n: integer) -> integer {
 
 // ── TOC extraction ───────────────────────────────────────────
 
+// One heading of a document: its level (1..6), its plain text, and the slug an anchor link
+// uses.  What `extract_headings` answers, in source order.
 pub struct Heading {
     level: integer,
     text: text,
