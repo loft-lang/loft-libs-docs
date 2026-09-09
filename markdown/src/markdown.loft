@@ -876,7 +876,9 @@ pub fn rewrite_link(url: text, base_dir: text) -> text {
     }
     anchor = "";
     target = url;
-    hash_at = url.find("#");
+    // `find` answers `integer?` — null for a miss, which the `>= 0` test below reads as
+    // absent.  `?? -1` names that miss once, so the two slices below are byte offsets.
+    hash_at = url.find("#") ?? -1;
     if hash_at >= 0 {
         ulen = url.size();
         target = url[0..hash_at];
@@ -900,7 +902,7 @@ pub fn rewrite_link(url: text, base_dir: text) -> text {
 }
 
 fn parent_dir(p: text) -> text {
-    last_slash = p.rfind("/");
+    last_slash = p.rfind("/") ?? -1;
     if last_slash < 0 { return ""; }
     p[0..last_slash]
 }

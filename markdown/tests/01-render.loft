@@ -138,11 +138,13 @@ fn main() {
                  "blockquote merges consecutive lines");
     bq2 = markdown::render("> a\n\n> b\n", "", "", "");
     bq2_count = 0;
-    bi = bq2.find("<blockquote>");
+    // `find` answers `integer?` — null for a miss.  `?? -1` names the miss once at
+    // each door, so the offsets that reach the slice are plain byte positions.
+    bi = bq2.find("<blockquote>") ?? -1;
     while bi >= 0 {
         bq2_count = bq2_count + 1;
         rest = bq2[bi + 12..];
-        next = rest.find("<blockquote>");
+        next = rest.find("<blockquote>") ?? -1;
         if next < 0 { bi = -1; }
         else { bi = bi + 12 + next; }
     }
