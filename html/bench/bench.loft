@@ -1,0 +1,106 @@
+// Copyright (c) 2026 Jurjen Stellingwerff
+// SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// bench — the performance pass: the html library's `escape_html`, timed on a fixed
+// workload, with a hash of what it produced.
+//
+//     loft --interpret bench/bench.loft [--n N]         the interpreter
+//     loft --native-release bench/bench.loft [--n N]    compiled
+//     bench/.build/stats_rs [--n N]                     the pure-Rust twin (bench/bench.rs)
+//
+// One tab-separated line per workload: name, iterations, total µs, ns per op, the bytes
+// one op escapes, ns per byte, and an FNV-1a-32 hash of one canonical call's output.  The
+// hash is what makes a benchmark a VALIDATION: the interpreter, the native build and the
+// Rust twin must print the same hash for a row, or one of them is not computing the
+// routine it claims to — and only then does comparing their speeds mean anything.
+//
+// Two shapes of input: the short attribute-sized text the doc viewer escapes dozens of
+// times a page, and one large blob.  Each is built in code, the same way in every lane,
+// as four inputs of EQUAL size that differ in their first character, rotated per call so
+// no backend can hoist a call out of the repetition loop.
+use html;
+
+/// One measured routine.
+struct Row {
+  name: text = "",
+  iters: integer = 0,
+  us: integer = 0,
+  px: integer = 0,
+  hash: integer = 0,
+  sink: integer = 0,
+}
+
+const FNV_OFFSET = 2166136261;
+const FNV_PRIME = 16777619;
+
+/// FNV-1a-32 over the UTF-8 bytes of a text, one round per byte.
+fn fnv_text(h0: integer, s: text) -> integer {
+  ft_h = h0;
+  for ft_i in 0..s.size() {
+    ft_h = ((ft_h ^ s.byte_at(ft_i)) * FNV_PRIME) & 0xFFFFFFFF;
+  }
+  ft_h
+}
+
+fn print_row(r: const Row) {
+  pr_ns = ((r.us * 1000) / r.iters) ?? 0;
+  pr_px = if r.px > 0 { (((r.us * 1000) as float) / ((r.iters * r.px) as float)) ?? 0.0 }
+          else { 0.0 };
+  println("{r.name}\t{r.iters}\t{r.us}\t{pr_ns}\t{r.px}\t{pr_px:.3}\t{r.hash:x}");
+}
+
+// ── The workloads ───────────────────────────────────────────────────
+
+/// 120 bytes, 12 of them one of the five escaped characters.
+fn short_input(v: integer) -> text {
+  "{v}: <a href='x'>Tom & \"Jerry\" & 'Spike'</a> is the plain text that the doc viewer escapes before it lands in a page body."
+}
+
+/// 64 KiB and one byte: a leading variant character, then 1,024 lines of 64 bytes.
+fn blob_input(v: integer) -> text {
+  bl_out = "{v}";
+  for _ in 0..1024 {
+    bl_out += "<li class='row'>item & \"value\" in one sixty-four byte line</li>\n";
+  }
+  bl_out
+}
+
+// ── escape_html ─────────────────────────────────────────────────────
+
+fn bench_escape(n: integer, name: text, vars: const vector<text>, calls: integer) -> Row {
+  be_t0 = ticks();
+  be_sink = 0;
+  for be_r in 0..n {
+    for be_k in 0..calls {
+      be_out = vars[(be_r + be_k) & 3]?.escape_html();
+      be_sink += be_out.size();
+    }
+  }
+  be_us = ticks() - be_t0;
+  be_one = vars[0]?.escape_html();
+  Row { name: name, iters: n, us: be_us, px: calls * vars[0]?.size(),
+        hash: fnv_text(FNV_OFFSET, be_one), sink: be_sink }
+}
+
+fn main() {
+  mn_n = 20;
+  mn_args = arguments();
+  mn_i = 0;
+  while mn_i < len(mn_args) {
+    if mn_args[mn_i]? == "--n" && mn_i + 1 < len(mn_args) {
+      mn_n = (mn_args[mn_i + 1]? as integer?)?;
+      mn_i += 1;
+    }
+    mn_i += 1;
+  }
+  if mn_n < 1 { mn_n = 1; }
+  mn_short: vector<text> = [];
+  mn_blob: vector<text> = [];
+  for mn_v in 0..4 {
+    mn_short += [short_input(mn_v)];
+    mn_blob += [blob_input(mn_v)];
+  }
+  println("routine\titers\tus\tns_op\tpx\tns_px\thash");
+  print_row(bench_escape(mn_n, "escape_html", mn_short, 10000));
+  print_row(bench_escape(mn_n, "escape_html_blob", mn_blob, 16));
+}

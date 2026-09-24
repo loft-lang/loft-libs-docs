@@ -1,0 +1,282 @@
+// Copyright (c) 2026 Jurjen Stellingwerff
+// SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// bench — the performance pass: the markdown library's public routines, timed on a fixed
+// workload, with a hash of what they produced.
+//
+//     loft --interpret bench/bench.loft [--n N]         the interpreter
+//     loft --native-release bench/bench.loft [--n N]    compiled
+//     bench/.build/stats_rs [--n N]                     the pure-Rust twin (bench/bench.rs)
+//
+// One tab-separated line per routine: name, iterations, total µs, ns per op, the bytes (or
+// lines) one op processes, ns per byte, and an FNV-1a-32 hash of one canonical call's
+// output.  The hash is what makes a benchmark a VALIDATION: the interpreter, the native
+// build and the Rust twin must print the same hash for a row, or one of them is not
+// computing the routine it claims to — and only then does comparing their speeds mean
+// anything.
+//
+// Every workload is built in code, the same way in every lane: a few inputs of EQUAL size
+// that differ in one character, rotated per call, so no backend can hoist a call out of
+// the repetition loop.  Each timed loop folds the size of what it produced into `sink`.
+use markdown;
+
+/// One measured routine.
+struct Row {
+  name: text = "",
+  iters: integer = 0,
+  us: integer = 0,
+  px: integer = 0,
+  hash: integer = 0,
+  sink: integer = 0,
+}
+
+const FNV_OFFSET = 2166136261;
+const FNV_PRIME = 16777619;
+
+/// FNV-1a-32 over the low 32 bits of each integer, high byte first.
+fn fnv(h0: integer, v: const vector<integer>) -> integer {
+  fv_h = h0;
+  for x in v {
+    fv_w = x & 0xFFFFFFFF;
+    fv_h = ((fv_h ^ ((fv_w >> 24) & 255)) * FNV_PRIME) & 0xFFFFFFFF;
+    fv_h = ((fv_h ^ ((fv_w >> 16) & 255)) * FNV_PRIME) & 0xFFFFFFFF;
+    fv_h = ((fv_h ^ ((fv_w >> 8) & 255)) * FNV_PRIME) & 0xFFFFFFFF;
+    fv_h = ((fv_h ^ (fv_w & 255)) * FNV_PRIME) & 0xFFFFFFFF;
+  }
+  fv_h
+}
+
+/// FNV-1a-32 over the UTF-8 bytes of a text, one round per byte.
+fn fnv_text(h0: integer, s: text) -> integer {
+  ft_h = h0;
+  for ft_i in 0..s.size() {
+    ft_h = ((ft_h ^ s.byte_at(ft_i)) * FNV_PRIME) & 0xFFFFFFFF;
+  }
+  ft_h
+}
+
+fn print_row(r: const Row) {
+  pr_ns = ((r.us * 1000) / r.iters) ?? 0;
+  pr_px = if r.px > 0 { (((r.us * 1000) as float) / ((r.iters * r.px) as float)) ?? 0.0 }
+          else { 0.0 };
+  println("{r.name}\t{r.iters}\t{r.us}\t{pr_ns}\t{r.px}\t{pr_px:.3}\t{r.hash:x}");
+}
+
+// ── The workloads ───────────────────────────────────────────────────
+
+/// A paragraph with six spans (bold with nested emphasis, code, a titled link,
+/// strikethrough, a URL autolink and a mail autolink) and plain prose around them.
+fn inline_para(v: integer) -> text {
+  "The **render {v} pass with *nested emphasis* inside** walks each `span_{v}` of the paragraph and links [the guide](../guide.md#intro \"Guide\") next to ~~retired wording~~ plus <https://example.org/docs> and <help@example.org> while the plain prose between spans carries most of the bytes: alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi & a < b > c \"q\"."
+}
+
+/// 200 bytes, 12 of them entities (6 %).
+fn escape_input(v: integer) -> text {
+  ei_unit = "{v}: if (a < b) && (c > d) then print \"ok\" else keep the plain fallback value for every single caller.";
+  "{ei_unit}{ei_unit}"
+}
+
+/// A 60-character heading: capitals, spaces, punctuation and digits.
+fn slug_input(v: integer) -> text {
+  "{v}. Getting Started: The Loft Markdown Renderer, Part 2 (Beta)"
+}
+
+/// 122 sections of 18 lines — 2,196 lines, three headings a section (ATX, setext, and
+/// ATX with closing hashes), a fenced block holding a line that is NOT a heading.
+fn headings_doc(v: integer) -> text {
+  hd_out = "";
+  for hd_k in 0..122 {
+    hd_out += "## Section {hd_k} Overview {v}\n";
+    hd_out += "Intro paragraph line for section {hd_k}.\n";
+    hd_out += "Second line of prose.\n";
+    hd_out += "\n";
+    hd_out += "Setext Title {hd_k}\n";
+    hd_out += "----------------\n";
+    hd_out += "\n";
+    hd_out += "- item one\n";
+    hd_out += "- item two\n";
+    hd_out += "\n";
+    hd_out += "```loft\n";
+    hd_out += "# not a heading\n";
+    hd_out += "```\n";
+    hd_out += "### Details {hd_k} ###\n";
+    hd_out += "> quote line\n";
+    hd_out += "| a | b |\n";
+    hd_out += "Trailing prose.\n";
+    hd_out += "\n";
+  }
+  hd_out
+}
+
+/// 160 sections exercising every block construct: headings, multi-line paragraphs with
+/// spans, setext, lists with tasks and a continuation, a fenced block, an aligned table,
+/// a block quote, a comment, a rule, an indented code line and a tag link.
+fn render_doc(v: integer) -> text {
+  rd_out = "";
+  for rd_k in 0..160 {
+    rd_out += "## Section {rd_k}: Overview {v}\n";
+    rd_out += "This paragraph opens section {rd_k} with **bold text**, `inline_code`, a [link](other.md#part) and\n";
+    rd_out += "*emphasis* that continues onto a second line with ~~struck~~ words & symbols < > \"quoted\".\n";
+    rd_out += "\n";
+    rd_out += "Setext Heading {rd_k}\n";
+    rd_out += "------------------\n";
+    rd_out += "\n";
+    rd_out += "- first item with `code`\n";
+    rd_out += "- [x] done task\n";
+    rd_out += "- [ ] open task\n";
+    rd_out += "  continued on an indented line\n";
+    rd_out += "1. ordered one\n";
+    rd_out += "2. ordered two\n";
+    rd_out += "\n";
+    rd_out += "```loft\n";
+    rd_out += "let x{rd_k} = {rd_k} < 3 && y > 2;\n";
+    rd_out += "```\n";
+    rd_out += "| Name | Value | Note |\n";
+    rd_out += "|:-----|:-----:|-----:|\n";
+    rd_out += "| a{rd_k} | **{rd_k}** | `x` |\n";
+    rd_out += "| b | c | d |\n";
+    rd_out += "\n";
+    rd_out += "> Quoted text for section {rd_k}\n";
+    rd_out += "> with a second line\n";
+    rd_out += "\n";
+    rd_out += "<!-- a comment -->\n";
+    rd_out += "---\n";
+    rd_out += "    indented code line {rd_k}\n";
+    rd_out += "\n";
+    rd_out += "Closing paragraph @P259 with <https://example.org/{rd_k}> text and ![img](pics/a.png).\n";
+    rd_out += "\n";
+  }
+  rd_out
+}
+
+// ── render_inline ───────────────────────────────────────────────────
+
+const INLINE_CALLS = 1000;
+
+fn bench_render_inline(n: integer) -> Row {
+  bi_vars: vector<text> = [];
+  for bi_v in 0..4 { bi_vars += [inline_para(bi_v)]; }
+  bi_t0 = ticks();
+  bi_sink = 0;
+  for bi_r in 0..n {
+    for bi_k in 0..INLINE_CALLS {
+      bi_out = markdown::render_inline(bi_vars[(bi_r + bi_k) & 3]?, "doc/claude", "/tag/", "/raw/");
+      bi_sink += bi_out.size();
+    }
+  }
+  bi_us = ticks() - bi_t0;
+  bi_one = markdown::render_inline(bi_vars[0]?, "doc/claude", "/tag/", "/raw/");
+  Row { name: "render_inline", iters: n, us: bi_us, px: INLINE_CALLS * bi_vars[0]?.size(),
+        hash: fnv_text(FNV_OFFSET, bi_one), sink: bi_sink }
+}
+
+// ── html_escape ─────────────────────────────────────────────────────
+
+const ESCAPE_CALLS = 10000;
+
+fn bench_html_escape(n: integer) -> Row {
+  be_vars: vector<text> = [];
+  for be_v in 0..4 { be_vars += [escape_input(be_v)]; }
+  be_t0 = ticks();
+  be_sink = 0;
+  for be_r in 0..n {
+    for be_k in 0..ESCAPE_CALLS {
+      be_out = markdown::html_escape(be_vars[(be_r + be_k) & 3]?);
+      be_sink += be_out.size();
+    }
+  }
+  be_us = ticks() - be_t0;
+  be_one = markdown::html_escape(be_vars[0]?);
+  Row { name: "html_escape", iters: n, us: be_us, px: ESCAPE_CALLS * be_vars[0]?.size(),
+        hash: fnv_text(FNV_OFFSET, be_one), sink: be_sink }
+}
+
+// ── slugify ─────────────────────────────────────────────────────────
+
+const SLUG_CALLS = 10000;
+
+fn bench_slugify(n: integer) -> Row {
+  bs_vars: vector<text> = [];
+  for bs_v in 0..4 { bs_vars += [slug_input(bs_v)]; }
+  bs_t0 = ticks();
+  bs_sink = 0;
+  for bs_r in 0..n {
+    for bs_k in 0..SLUG_CALLS {
+      bs_out = markdown::slugify(bs_vars[(bs_r + bs_k) & 3]?);
+      bs_sink += bs_out.size();
+    }
+  }
+  bs_us = ticks() - bs_t0;
+  bs_one = markdown::slugify(bs_vars[0]?);
+  Row { name: "slugify", iters: n, us: bs_us, px: SLUG_CALLS * bs_vars[0]?.size(),
+        hash: fnv_text(FNV_OFFSET, bs_one), sink: bs_sink }
+}
+
+// ── extract_headings ────────────────────────────────────────────────
+
+fn fnv_headings(hs: const vector<markdown::Heading>) -> integer {
+  fh_h = FNV_OFFSET;
+  for fh_e in hs {
+    fh_lv: vector<integer> = [fh_e.level];
+    fh_h = fnv(fh_h, fh_lv);
+    fh_h = fnv_text(fh_h, fh_e.text);
+    fh_h = fnv_text(fh_h, fh_e.slug);
+  }
+  fh_h
+}
+
+const HEADING_PASSES = 4;
+
+fn bench_extract_headings(n: integer) -> Row {
+  bx_vars: vector<text> = [];
+  for bx_v in 0..4 { bx_vars += [headings_doc(bx_v)]; }
+  bx_t0 = ticks();
+  bx_sink = 0;
+  for bx_r in 0..n {
+    for bx_k in 0..HEADING_PASSES {
+      bx_out = markdown::extract_headings(bx_vars[(bx_r + bx_k) & 3]?);
+      bx_sink += len(bx_out);
+    }
+  }
+  bx_us = ticks() - bx_t0;
+  bx_one = markdown::extract_headings(bx_vars[0]?);
+  Row { name: "extract_headings", iters: n, us: bx_us, px: HEADING_PASSES * 2196,
+        hash: fnv_headings(bx_one), sink: bx_sink }
+}
+
+// ── render ──────────────────────────────────────────────────────────
+
+fn bench_render(n: integer) -> Row {
+  br_vars: vector<text> = [];
+  for br_v in 0..4 { br_vars += [render_doc(br_v)]; }
+  br_t0 = ticks();
+  br_sink = 0;
+  for br_r in 0..n {
+    br_out = markdown::render(br_vars[br_r & 3]?, "doc/claude", "/tag/", "/raw/");
+    br_sink += br_out.size();
+  }
+  br_us = ticks() - br_t0;
+  br_one = markdown::render(br_vars[0]?, "doc/claude", "/tag/", "/raw/");
+  Row { name: "render", iters: n, us: br_us, px: br_vars[0]?.size(),
+        hash: fnv_text(FNV_OFFSET, br_one), sink: br_sink }
+}
+
+fn main() {
+  mn_n = 20;
+  mn_args = arguments();
+  mn_i = 0;
+  while mn_i < len(mn_args) {
+    if mn_args[mn_i]? == "--n" && mn_i + 1 < len(mn_args) {
+      mn_n = (mn_args[mn_i + 1]? as integer?)?;
+      mn_i += 1;
+    }
+    mn_i += 1;
+  }
+  if mn_n < 1 { mn_n = 1; }
+  println("routine\titers\tus\tns_op\tpx\tns_px\thash");
+  print_row(bench_render_inline(mn_n));
+  print_row(bench_html_escape(mn_n));
+  print_row(bench_slugify(mn_n));
+  print_row(bench_extract_headings(mn_n));
+  print_row(bench_render(mn_n));
+}
