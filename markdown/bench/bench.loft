@@ -18,7 +18,7 @@
 // Every workload is built in code, the same way in every lane: a few inputs of EQUAL size
 // that differ in one character, rotated per call, so no backend can hoist a call out of
 // the repetition loop.  Each timed loop folds the size of what it produced into `sink`.
-use markdown;
+use markdown::*;
 
 /// One measured routine.
 struct Row {

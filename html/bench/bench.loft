@@ -18,7 +18,7 @@
 // times a page, and one large blob.  Each is built in code, the same way in every lane,
 // as four inputs of EQUAL size that differ in their first character, rotated per call so
 // no backend can hoist a call out of the repetition loop.
-use html;
+use html::*;
 
 /// One measured routine.
 struct Row {
