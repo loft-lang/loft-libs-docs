@@ -9,8 +9,10 @@ One function. It escapes the five characters that can break out of an HTML eleme
 attribute value, so text you did not write can be interpolated into markup without becoming
 markup.
 
-It is deliberately small: HTML escaping used to sit in the always-loaded standard library, and
-it is a library concern rather than a core one, so it moved here.
+It is deliberately small: escaping is a library concern rather than a core one, so it is not
+in the always-loaded standard library.
+
+A guide: [docs/01-getting-started.loft](docs/01-getting-started.loft).
 
 ## Install
 
@@ -47,12 +49,15 @@ fn main() {
 | `"` | `&quot;` |
 | `'` | `&#x27;` |
 
-`&` is escaped first, so the entities it produces are never escaped a second time.
+Each character is replaced once, in one pass, so the entities a call writes are not escaped
+again by that call.  A second call does escape them — `"&amp;"` becomes `"&amp;amp;"` — so
+escape once, where the text enters markup ([`@HTM-001`](tests/02-worked-examples.loft)).
 
 ## Where to use it
 
 **Every** place text you did not write reaches HTML output: an element body, and an attribute
-value in either quoting style. A `<p>` needs it as much as an `<a title='…'>` does.
+value in either quoting style. A `<p>` needs it as much as an `<a title='…'>` does
+([`@HTM-002`](tests/02-worked-examples.loft)).
 
 It is **not** a sanitiser. It does not filter markup, strip scripts, or make attacker-supplied
 *markup* safe — it makes attacker-supplied *text* safe to place in markup, which is a
@@ -93,7 +98,8 @@ writing markup yourself, reach for this package.
 cd html && loft test
 ```
 
-`tests/01-escape.loft` covers each entity, the ordering rule, and text that needs no escaping.
+`tests/01-escape.loft` covers each entity, the ordering rule, and text that needs no escaping;
+`tests/02-worked-examples.loft` holds `@HTM-001` and `@HTM-002`, the examples the source cites.
 
 ## Status
 
