@@ -10,6 +10,8 @@ heading list, so a page can build its own table of contents from the same source
 
 Pure loft — no C, no parser generator, one pass over the text.
 
+A guide: [docs/01-getting-started.loft](docs/01-getting-started.loft).
+
 ## Install
 
 ```sh
@@ -51,8 +53,8 @@ markdown::render(source, "", "", "")
 
 | argument | what it does when non-empty |
 |---|---|
-| `base_dir` | repo-relative directory used to resolve relative `[text](other.md)` links |
-| `tag_url_prefix` | body-text `@P123` / `@PLAN22` mentions become links to `<prefix><name>` |
+| `base_dir` | resolves relative `[text](other.md)` links against this repo-relative directory and routes them through `/file/` — `other.md` under `doc/sub` becomes `/file/doc/sub/other.md` ([`@MKD-001`](tests/02-worked-examples.loft)) |
+| `tag_url_prefix` | body-text `@P123` / `@PLAN22` mentions become links to `<prefix><name>`; no other tag form is linked |
 | `image_url_prefix` | relative `<img src>` URLs are routed through this prefix, e.g. `/raw/` so a viewer serves the bytes |
 
 They exist because this renderer's first consumer serves a repository's own Markdown, where a
@@ -73,7 +75,7 @@ stands alone, you want all three empty.
 `extract_headings` returns the heading text **before** inline rendering, so `## The *hard*
 way` gives you the raw text. Pass it through `render_inline` if the table of contents should
 carry the emphasis too. The slug it returns is the same one `render` puts on the heading, so a
-generated `#anchor` always lands.
+generated `#anchor` always lands ([`@MKD-002`](tests/02-worked-examples.loft)).
 
 ## What it supports
 
@@ -90,7 +92,8 @@ line breaks, backslash escapes, and nesting between all of them.
 
 Deferred because they are rare in the documents this renders — reference-style links
 (`[text][label]`), definition lists, footnotes, mermaid, math, multi-paragraph table cells,
-and loose lists (a list whose items become paragraphs).
+and loose lists (a list whose items become paragraphs).  A reference-style link renders as its
+literal text, and its `[label]: url` definition line as a paragraph of its own.
 
 **Raw HTML in the source is escaped, not passed through.** That is a deliberate safety
 default: markdown from an untrusted source cannot inject markup. It also means you cannot drop
@@ -100,7 +103,7 @@ a `<div>` into a document and have it survive.
 
 `markdown::html_escape` escapes four characters — `&`, `<`, `>`, `"` — and **not** the
 apostrophe. That is safe for the element bodies the renderer puts text into, and unsafe for a
-single-quoted attribute value.
+single-quoted attribute value ([`@MKD-003`](tests/02-worked-examples.loft)).
 
 The `html` package's `escape_html` escapes all five, including `'` as `&#x27;`. If you are
 writing your own markup, use that one; this function is exported because the renderer needs
@@ -112,12 +115,14 @@ it, not because it is the general-purpose escaper.
 cd markdown && loft test
 ```
 
-`tests/01-render.loft` walks the supported constructs and pins their HTML.
+`tests/01-render.loft` walks the supported constructs and pins their HTML;
+`tests/02-worked-examples.loft` holds `@MKD-001` … `@MKD-003`, the examples the source cites.
 
 ## Status
 
 Stable and additive. Pure loft with no dependencies, so it behaves identically on the
-interpreter, `--native`, wasm and in the browser. It renders loft's own documentation.
+interpreter, `--native`, wasm and in the browser. loft's repository viewer (`make view`)
+renders the repository's Markdown with it.
 
 ## License
 
