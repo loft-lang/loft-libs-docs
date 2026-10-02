@@ -1,0 +1,46 @@
+// Copyright (c) 2026 Jurjen Stellingwerff
+// SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// Worked examples for `markdown`.  Each test is a call-site contract a signature
+// cannot show, cited from its function with `// Example: @MKD-00N`.
+use markdown::*;
+
+// @MKD-001 — a non-empty `base_dir` does not just join paths: it routes every relative
+// link through `/file/`, the route of the repository viewer this renderer was built for.
+// `..` is resolved against the directory; an absolute URL, a root-relative `/path` and an
+// `#anchor` are left alone.  For a document that stands alone, pass "" and links stay as
+// written.
+fn test_base_dir_routes_relative_links_through_file() {
+  assert(render("[o](other.md)\n", "", "", "") == "<p><a href=\"other.md\">o</a></p>",
+         "base_dir \"\" leaves the link as written");
+  assert(rewrite_link("other.md", "doc/sub") == "/file/doc/sub/other.md", "joined, under /file/");
+  assert(rewrite_link("../x.md#a", "doc/sub") == "/file/doc/x.md#a", ".. resolved, anchor kept");
+  assert(rewrite_link("https://e.com/a.md", "doc/sub") == "https://e.com/a.md", "absolute: untouched");
+  assert(rewrite_link("#top", "doc/sub") == "#top", "an anchor: untouched");
+  assert(render("[o](other.md)\n", "doc/sub", "", "") == "<p><a href=\"/file/doc/sub/other.md\">o</a></p>",
+         "render applies the same rewrite to the body");
+}
+
+// @MKD-002 — `extract_headings` hands back a heading's RAW text, markup included, and the
+// slug `render` puts on the heading's `id`.  So a table of contents built from it links
+// exactly; run the text through `render_inline` when the entry should keep its emphasis.
+fn test_a_heading_is_raw_text_with_the_rendered_slug() {
+  src = "## The *hard* way\n";
+  h = extract_headings(src)[0];
+  assert(h.text == "The *hard* way" && h.level == 2, "raw text: '{h.text}'");
+  assert(h.slug == "the-hard-way" && slugify(h.text) == h.slug, "slug: '{h.slug}'");
+  assert(render(src, "", "", "") == "<h2 id=\"the-hard-way\">The <em>hard</em> way</h2>", "the id matches");
+  assert(render_inline(h.text, "", "", "") == "The <em>hard</em> way", "render_inline for a styled entry");
+}
+
+// @MKD-003 — `html_escape` escapes `&`, `<`, `>` and `"`, and NOT the apostrophe.  That
+// is enough for the element bodies the renderer writes, and not for a single-quoted
+// attribute: the value's own `'` closes it.  For markup you write yourself, use the
+// `html` package's `escape_html`, which escapes all five.
+fn test_the_apostrophe_is_left_alone() {
+  assert(html_escape("a'b\"<&>") == "a'b&quot;&lt;&amp;&gt;", "four of the five");
+  attr = "<a title='{html_escape("x' y='z")}'>";
+  quotes = 0;
+  for c in attr { if c == '\'' { quotes += 1; } }
+  assert(quotes == 4, "the value's quotes survive and break the attribute: {attr}");
+}

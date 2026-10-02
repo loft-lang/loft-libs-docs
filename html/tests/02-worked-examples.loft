@@ -1,0 +1,30 @@
+// Copyright (c) 2026 Jurjen Stellingwerff
+// SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// Worked examples for `html`.  Each test is a call-site contract the signature
+// `escape_html(self: text) -> text` cannot show, cited from the function with
+// `// Example: @HTM-00N`.
+use html::*;
+
+// @HTM-001 — escape ONCE, at the point the text enters markup.  Escaping is not
+// idempotent: an already-escaped `&amp;` escapes again to `&amp;amp;`, which a browser
+// shows as the literal text "&amp;".  So keep the raw text in your data and escape where
+// it is written into HTML — never store the escaped form and escape it again on output.
+fn test_escaping_twice_shows_the_entity() {
+  once = "Tom & Jerry".escape_html();
+  assert(once == "Tom &amp; Jerry", "once: {once}");
+  twice = once.escape_html();
+  assert(twice == "Tom &amp;amp; Jerry", "twice is visible as '&amp;' on the page: {twice}");
+}
+
+// @HTM-002 — one escape serves every HTML text context: an element body, and an
+// attribute value in EITHER quoting style.  The apostrophe is escaped too, so a value
+// placed between single quotes cannot close its attribute and start another.
+fn test_a_single_quoted_attribute_stays_closed() {
+  hostile = "x' onmouseover='alert(1)";
+  attr = "<a title='{hostile.escape_html()}'>";
+  assert(attr == "<a title='x&#x27; onmouseover=&#x27;alert(1)'>", "{attr}");
+  quotes = 0;
+  for c in attr { if c == '\'' { quotes += 1; } }
+  assert(quotes == 2, "only the attribute's own two quotes remain: {quotes}");
+}
