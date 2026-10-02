@@ -3,3 +3,5 @@ dist/
 *.tar.gz
 loft.lock
 target/
+**/bench/.build/
+**/bench/.loft/
