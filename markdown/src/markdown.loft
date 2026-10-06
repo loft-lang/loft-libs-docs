@@ -967,9 +967,9 @@ fn match_tracker_tag(src: text, start: integer, n: integer) -> integer {
 
 // One heading of a document: its level (1..6), its raw text, and its anchor slug.
 pub struct Heading {
-    level: integer,
-    text: text,
-    slug: text
+    pub level: integer,
+    pub text: text,
+    pub slug: text
 }
 
 // Extract every heading from `source` in source order — both
